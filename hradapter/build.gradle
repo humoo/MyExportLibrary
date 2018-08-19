@@ -1,0 +1,98 @@
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion mCompileSdkVersion
+
+//    publishNonDefault false
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion mTargetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    implementation libSupportAppcompat
+    implementation libSupportRecyclerview
+}
+
+//=================================== 打包 jar 或 arr =========================================//
+
+//配置信息(jar命名相关参数配置)
+def SDK_VERSION = android.defaultConfig.versionName//sdk版本
+def SDK_TIME = new Date().format("yyyyMMddHHmm")//出包日期
+def sdkDestinationPath = "build"//生成jar存放的目录
+
+//删除当前位置的jar
+task clearTask(type: Delete) {
+    delete 'hradapter-' + SDK_VERSION + '.jar'
+}
+
+def releaseJar = file('build/intermediates/intermediate-jars/release/classes.jar')
+
+//生成 jar 方法
+task makeJar(type: Jar) {
+
+    baseName = "hradapter-" + SDK_VERSION +SDK_TIME
+    destinationDir = file(sdkDestinationPath)
+    //打包当前目录下的class文件
+//    from('build/intermediates/classes/release/com/humo/hradapter/')
+    from zipTree(releaseJar)//导出混淆的jar
+
+    //打包到jar的目录结构
+//    into('com/humo/hradapter/')
+    //去掉不需要的文件
+//    exclude('BuildConfig.class', 'R.class')
+
+}
+
+task proguardJar(dependsOn: ['makeJar'], type: proguard.gradle.ProGuardTask) {
+    //Android 默认的 proguard 文件
+    configuration android.getDefaultProguardFile('proguard-android.txt')
+    //manifest 注册的组件对应的 proguard 文件
+    configuration 'proguard-rules.pro'
+    String inJar = makeJar.archivePath.getAbsolutePath()
+    //输入 jar
+    injars inJar
+    //输出 jar
+    outjars inJar.substring(0, inJar.lastIndexOf(File.separator)) + "/proguard-${makeJar.archiveName}"
+    //设置不删除未引用的资源(类，方法等)
+    dontshrink
+    Plugin plugin = getPlugins().hasPlugin("AppPlugin") ?
+            getPlugins().findPlugin("AppPlugin") :
+            getPlugins().findPlugin("LibraryPlugin")
+    if (plugin != null) {
+        List<String> runtimeJarList
+        if (plugin.getMetaClass().getMetaMethod("getRuntimeJarList")) {
+            runtimeJarList = plugin.getRuntimeJarList()
+        } else if (android.getMetaClass().getMetaMethod("getBootClasspath")) {
+            runtimeJarList = android.getBootClasspath()
+        } else {
+            runtimeJarList = plugin.getBootClasspath()
+        }
+        for (String runtimeJar : runtimeJarList) {
+            //给 proguard 添加 runtime
+            libraryjars(runtimeJar)
+        }
+    }
+}
+
+makeJar.dependsOn(clearTask,build)
+proguardJar.dependsOn(makeJar)
